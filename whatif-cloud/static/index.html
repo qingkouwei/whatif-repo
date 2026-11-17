@@ -1,0 +1,156 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>距离即权限 · 现场看板</title>
+<style>
+  :root{
+    --bg:#0b0e14; --panel:#141926; --line:#222a3a; --txt:#e6ebf5;
+    --dim:#8a96ad; --red:#ff5a5f; --yellow:#ffc93c; --green:#37d67a;
+    --blue:#4aa8ff;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{background:var(--bg);color:var(--txt);
+    font:15px/1.6 -apple-system,"PingFang SC","Microsoft YaHei",sans-serif;padding:20px}
+  h1{font-size:19px;font-weight:600;margin-bottom:2px}
+  .sub{color:var(--dim);font-size:13px;margin-bottom:18px}
+  .grid{display:grid;grid-template-columns:1.1fr .9fr;gap:16px;max-width:1100px}
+  .panel{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:16px}
+  .tier{display:flex;gap:10px;margin-bottom:14px}
+  .tier .chip{flex:1;text-align:center;padding:14px 6px;border-radius:10px;
+    background:#0f1420;border:1px solid var(--line);opacity:.45;transition:.25s}
+  .tier .chip.on{opacity:1;transform:translateY(-2px)}
+  .tier .chip b{display:block;font-size:22px}
+  .tier .chip span{font-size:12px;color:var(--dim)}
+  .chip.t0.on{border-color:var(--red);box-shadow:0 0 0 1px var(--red)} .chip.t0 b{color:var(--red)}
+  .chip.t1.on{border-color:var(--yellow);box-shadow:0 0 0 1px var(--yellow)} .chip.t1 b{color:var(--yellow)}
+  .chip.t2.on{border-color:var(--green);box-shadow:0 0 0 1px var(--green)} .chip.t2 b{color:var(--green)}
+  .answer{font-size:26px;line-height:1.5;min-height:150px;
+    border-left:3px solid var(--blue);padding:6px 0 6px 16px;margin:14px 0}
+  .answer.t0{border-color:var(--red)} .answer.t1{border-color:var(--yellow)} .answer.t2{border-color:var(--green)}
+  .src{font-size:12px;color:var(--dim)}
+  .src .ai{color:var(--green)} .src .fb{color:var(--yellow)}
+  .row{display:flex;justify-content:space-between;padding:7px 0;border-bottom:1px solid var(--line);font-size:14px}
+  .row:last-child{border:0}
+  .row .k{color:var(--dim)}
+  .live{display:inline-block;width:8px;height:8px;border-radius:50%;background:var(--green);margin-right:6px}
+  .live.off{background:#555}
+  .sel{margin-bottom:14px}
+  select{background:#0f1420;color:var(--txt);border:1px solid var(--line);border-radius:8px;padding:7px 10px;font-size:14px}
+  .bar{height:8px;border-radius:4px;background:#0f1420;overflow:hidden;display:flex;margin-top:4px}
+  .bar i{display:block;height:100%}
+</style>
+</head>
+<body>
+  <h1>距离即权限 · What If Lab 现场看板</h1>
+  <div class="sub"><span id="live" class="live off"></span>设备实时状态 · 观众越凑近，装置说得越多</div>
+
+  <div class="grid">
+    <div class="panel">
+      <div class="tier">
+        <div class="chip t0" id="c0"><b>远</b><span>不给看</span></div>
+        <div class="chip t1" id="c1"><b>中</b><span>只一句</span></div>
+        <div class="chip t2" id="c2"><b>近</b><span>说完它</span></div>
+      </div>
+      <div class="answer t0" id="answer">等待设备连接…</div>
+      <div class="src" id="src">话题：<select id="topic"></select>
+        <button id="regen" style="margin-left:8px;background:#0f1420;color:var(--txt);border:1px solid var(--line);border-radius:8px;padding:5px 10px;cursor:pointer">换一批</button>
+      </div>
+      <div class="src" id="aiNote" style="margin-top:10px"></div>
+    </div>
+
+    <div class="panel">
+      <div class="row"><span class="k">当前距离</span><span id="dist">—</span></div>
+      <div class="row"><span class="k">超声除数(随温度)</span><span id="k">—</span></div>
+      <div class="row"><span class="k">光照 mV(分压后)</span><span id="lux">—</span></div>
+      <div class="row"><span class="k">信号 CSQ</span><span id="csq">—</span></div>
+      <div class="row"><span class="k">本地缓存覆盖</span><span id="cache">—</span></div>
+      <div style="height:10px"></div>
+      <div class="row"><span class="k">累计访问人次</span><span id="visits">0</span></div>
+      <div class="row"><span class="k">凑到近档的次数</span><span id="closes">0</span></div>
+      <div class="row"><span class="k">平均停留</span><span id="dwell">—</span></div>
+      <div class="row"><span class="k">最近的一次距离</span><span id="closest">—</span></div>
+      <div style="margin-top:12px">
+        <div class="src">档位停留分布</div>
+        <div class="bar"><i id="b0" style="background:var(--red);width:34%"></i><i id="b1" style="background:var(--yellow);width:33%"></i><i id="b2" style="background:var(--green);width:33%"></i></div>
+      </div>
+    </div>
+  </div>
+
+<script>
+const API = ""; // 同源
+let answers = null, curTier = 0;
+
+const $ = s => document.querySelector(s);
+async function j(u){ const r = await fetch(API+u); if(!r.ok) throw new Error(await r.text()); return r.json(); }
+
+function showTier(t){
+  curTier = t;
+  [0,1,2].forEach(i => $('#c'+i).classList.toggle('on', i===t));
+  const a = $('.answer'); a.className = 'answer t'+t;
+  if(answers) a.textContent = answers.answers[String(t)] || "…";
+}
+
+async function loadAnswers(id){
+  answers = await j('/api/answers?topic_id='+id);
+  showTier(curTier);
+  const note = $('#aiNote');
+  if(answers.source === 'nim'){
+    const ob = answers.generated_observed || {};   // AI 生成时真实看到的数据快照
+    const facts = [];
+    if(ob.visits) facts.push(ob.visits+'人次/最近'+(ob.closest_cm||'?')+'cm');
+    else facts.push('开机时零访问');
+    if(ob.temp_c!=null) facts.push(ob.temp_c+'℃');
+    if(ob.lux_mv!=null) facts.push(ob.lux_mv+'mV');
+    note.innerHTML = '<span class="ai">● 模型生成</span> '+ (answers.model||'') +
+      ' <span class="src">· 生成时注入的真实运行数据：'+facts.join(' · ')+'</span>';
+  }else{
+    note.innerHTML = '<span class="fb">● 本地兜底文案（非模型生成）</span> '+
+      '<span class="src">· 未配置 NIM key 或模型调用失败时启用</span>';
+  }
+}
+
+async function tick(){
+  try{
+    const tl = await j('/api/timeline?limit=1');
+    if(tl.length){
+      const s = tl[0];
+      $('#live').classList.remove('off');
+      $('#dist').textContent = s.dist_cm!=null? s.dist_cm+' cm':'—';
+      $('#lux').textContent = s.lux_mv!=null? s.lux_mv:'—';
+      $('#csq').textContent = s.csq!=null? s.csq:'—';
+      showTier(s.tier||0);
+    }else{
+      $('#live').classList.add('off');
+    }
+    const st = await j('/api/stats');
+    $('#visits').textContent = st.visits;
+    $('#closes').textContent = st.close_visits;
+    $('#dwell').textContent = st.avg_dwell_ms? (st.avg_dwell_ms/1000).toFixed(1)+'s':'—';
+    $('#closest').textContent = st.closest_cm!=null? st.closest_cm+' cm':'—';
+    const ts = st.tier_seconds||{}; const tot=(ts['0']||0)+(ts['1']||0)+(ts['2']||0)||1;
+    $('#b0').style.width=((ts['0']||0)/tot*100)+'%';
+    $('#b1').style.width=((ts['1']||0)/tot*100)+'%';
+    $('#b2').style.width=((ts['2']||0)/tot*100)+'%';
+  }catch(e){ /* 静默重试 */ }
+}
+
+(async function init(){
+  try{
+    const tp = await j('/api/topics');
+    $('#topic').innerHTML = tp.map(t=>`<option value="${t.id}">${t.name}</option>`).join('');
+    $('#topic').onchange = e => loadAnswers(e.target.value);
+    $('#regen').onclick = async () => {
+      $('#regen').disabled=true; $('#regen').textContent='生成中…';
+      await fetch(API+'/api/answers/regenerate?topic_id='+$('#topic').value,{method:'POST'});
+      await loadAnswers($('#topic').value);
+      $('#regen').disabled=false; $('#regen').textContent='换一批';
+    };
+    await loadAnswers(tp[0].id);
+  }catch(e){ $('#answer').textContent='后端未启动：先运行 cloud/app.py'; }
+  setInterval(tick, 1200); tick();
+})();
+</script>
+</body>
+</html>
