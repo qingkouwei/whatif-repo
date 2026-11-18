@@ -1,0 +1,36 @@
+version: "3.8"
+
+# 单机全栈（任何一台装了 Docker 的主机都能跑）：
+# MQTT broker + 采光看板服务
+# 仓库结构：根目录下 solar-dashboard/ 为本服务源码
+
+services:
+  mosquitto:
+    image: eclipse-mosquitto:2
+    container_name: solar-mosquitto
+    ports: ["1883:1883"]
+    volumes:
+      - ./mosquitto.conf:/mosquitto/config/mosquitto.conf
+      - mosquitto-data:/mosquitto/data
+    restart: unless-stopped
+
+  solar-dashboard:                    # 采光看板 + 日账 + 房评报告 API
+    build: ./solar-dashboard
+    container_name: solar-dashboard
+    ports: ["8001:8000"]
+    environment:
+      # 大模型走 OpenAI 兼容接口，任意一家均可（见 solar-dashboard/.env.example）；
+      # 不配 key 也能跑——自动退回本地统计评估，看板如实标注来源
+      LLM_PROVIDER: ${LLM_PROVIDER}
+      LLM_API_KEY: ${LLM_API_KEY}
+      LLM_BASE_URL: ${LLM_BASE_URL}
+      LLM_MODEL: ${LLM_MODEL}
+      MQTT_HOST: mosquitto
+      SOLAR_DB: /app/data/solar.db
+    volumes:
+      - dashboard-data:/app/data       # 日账与读数是资产，必须持久化
+    restart: unless-stopped
+
+volumes:
+  mosquitto-data:
+  dashboard-data:

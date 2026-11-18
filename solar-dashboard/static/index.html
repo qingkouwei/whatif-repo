@@ -1,0 +1,248 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>日光账本 · 房屋采光评估系统</title>
+<script src="https://cdn.jsdelivr.net/npm/echarts@5.4.3/dist/echarts.min.js"></script>
+<style>
+  :root {
+    --bg: #0f1115; --panel: #171a21; --panel-2: #1e222b;
+    --border: #2a2f3a;
+    --text: #e8eaed; --text-2: #9aa0aa; --text-3: #6b7280;
+    --accent: #4ade80; --accent-dim: #22c55e;
+    --sun: #fbbf24; --lamp: #60a5fa; --warn: #fb923c; --danger: #f87171;
+  }
+  * { box-sizing: border-box; }
+  body { margin:0; background:var(--bg); color:var(--text);
+    font-family:-apple-system,BlinkMacSystemFont,"PingFang SC","Microsoft YaHei",sans-serif;
+    font-size:14px; line-height:1.6; }
+  .wrap { max-width:1280px; margin:0 auto; padding:24px 20px 60px; }
+
+  header { margin-bottom:20px; display:flex; align-items:flex-start;
+    justify-content:space-between; gap:20px; flex-wrap:wrap; }
+  h1 { margin:0 0 4px; font-size:21px; font-weight:600; letter-spacing:-0.01em; }
+  .sub { color:var(--text-2); font-size:13px; }
+  .header-actions { display:flex; gap:10px; align-items:center; }
+  .btn { padding:7px 14px; background:var(--panel-2); border:1px solid var(--border);
+    border-radius:7px; color:var(--text-2); cursor:pointer; font-size:13px; }
+  .btn:hover { border-color:#3d4450; color:var(--text); }
+
+  .banner { background:rgba(248,113,113,.1); border:1px solid var(--danger);
+    border-radius:8px; padding:12px 16px; margin-bottom:18px; font-size:13px; color:#fca5a5; }
+  .banner code { background:rgba(0,0,0,.3); padding:1px 6px; border-radius:4px; }
+  .empty { color:var(--text-3); font-size:13px; padding:16px; text-align:center; }
+
+  .panel { background:var(--panel); border:1px solid var(--border);
+    border-radius:12px; padding:18px 20px; margin-bottom:18px; }
+  .panel h2 { margin:0 0 14px; font-size:15px; font-weight:600;
+    display:flex; align-items:center; gap:8px; }
+  .dot { width:8px; height:8px; border-radius:50%; display:inline-block; flex-shrink:0; }
+
+  /* 房屋 tabs */
+  .house-tabs { display:flex; gap:8px; flex-wrap:wrap; }
+  .tab { padding:9px 16px; background:var(--panel-2); border:1px solid var(--border);
+    border-radius:8px; color:var(--text-2); cursor:pointer; font-size:13px;
+    display:flex; align-items:center; gap:8px; }
+  .tab:hover { border-color:#3d4450; color:var(--text); }
+  .tab.active { background:rgba(74,222,128,.12); border-color:var(--accent-dim); color:var(--accent); }
+  .tab-sub { font-size:11px; color:var(--text-3); }
+
+  /* 设备健康 */
+  .health { display:flex; gap:8px; flex-wrap:wrap; }
+  .health-chip { font-size:11px; padding:4px 10px; border-radius:20px;
+    background:rgba(74,222,128,.1); color:var(--accent); border:1px solid rgba(74,222,128,.25); }
+  .health-chip.bad { background:rgba(248,113,113,.1); color:var(--danger);
+    border-color:rgba(248,113,113,.25); }
+
+  /* 房间卡片 */
+  .rooms { display:grid; grid-template-columns:repeat(auto-fit,minmax(200px,1fr)); gap:12px; }
+  .room { background:var(--panel-2); border:1px solid var(--border);
+    border-radius:10px; padding:14px 16px; cursor:pointer;
+    position:relative; overflow:hidden; }
+  .room:hover { border-color:#3d4450; }
+  .room.active { border-color:var(--accent-dim); background:rgba(74,222,128,.06); }
+  .room::before { content:''; position:absolute; left:0; top:0; bottom:0;
+    width:3px; background:var(--grade-color,var(--accent)); }
+  .room-name { font-size:14px; font-weight:500; margin-bottom:2px; }
+  .room-dir { color:var(--text-3); font-size:12px; font-weight:400; }
+  .room-meta { font-size:12px; color:var(--text-3); margin-bottom:10px; }
+  .room-score { display:flex; align-items:baseline; gap:8px; }
+  .score-num { font-size:26px; font-weight:600; line-height:1; }
+  .score-grade { font-size:12px; padding:2px 8px; border-radius:5px;
+    background:var(--grade-bg); color:var(--grade-color); font-weight:500; }
+  .room-stats { margin-top:10px; padding-top:10px; border-top:1px solid var(--border);
+    display:grid; grid-template-columns:1fr 1fr; gap:6px; font-size:12px; }
+  .stat-label { color:var(--text-3); }
+  .stat-val { color:var(--text); font-variant-numeric:tabular-nums; }
+  .lamp-flag { margin-top:8px; font-size:11px; padding:3px 7px; border-radius:4px;
+    background:rgba(96,165,250,.12); color:var(--lamp); display:inline-block; }
+  .dev-flag { color:var(--danger); font-size:11px; margin-left:4px; }
+
+  /* 图表 */
+  .toolbar { display:flex; gap:10px; align-items:center; margin-bottom:12px; flex-wrap:wrap; }
+  .toolbar label { font-size:12px; color:var(--text-2); }
+  select { background:var(--panel-2); border:1px solid var(--border); color:var(--text);
+    padding:6px 10px; border-radius:6px; font-size:13px; }
+  .chart { width:100%; height:340px; }
+  .legend-inline { display:flex; gap:16px; flex-wrap:wrap;
+    font-size:12px; color:var(--text-2); margin-bottom:10px; }
+  .legend-inline span { display:flex; align-items:center; gap:6px; }
+
+  /* 对比 */
+  .cmp-row { display:flex; align-items:center; gap:12px; margin-bottom:10px; }
+  .cmp-label { width:110px; font-size:13px; color:var(--text-2); flex-shrink:0; }
+  .cmp-bar-wrap { flex:1; height:20px; background:var(--panel-2);
+    border-radius:4px; overflow:hidden; }
+  .cmp-bar { height:100%; border-radius:4px; transition:width .3s; }
+  .cmp-val { width:150px; text-align:right; font-size:12px;
+    font-variant-numeric:tabular-nums; color:var(--text-2); flex-shrink:0; }
+
+  /* 发现 */
+  .finding { display:flex; gap:10px; padding:11px 13px; background:var(--panel-2);
+    border-left:3px solid var(--warn); border-radius:0 8px 8px 0;
+    margin-bottom:10px; font-size:13px; }
+  .finding.lamp { border-left-color:var(--lamp); }
+  .finding-icon { flex-shrink:0; font-size:14px; }
+
+  /* AI */
+  .ai-head { display:flex; align-items:center; gap:10px; margin-bottom:14px; flex-wrap:wrap; }
+  .badge { font-size:11px; padding:3px 9px; border-radius:20px;
+    background:linear-gradient(135deg,rgba(139,92,246,.2),rgba(59,130,246,.2));
+    border:1px solid rgba(139,92,246,.4); color:#c4b5fd; font-weight:500; }
+  .ai-body { font-size:14px; line-height:1.85; }
+  .ai-body p { margin:0 0 12px; }
+  .ai-body p:last-child { margin-bottom:0; }
+  .ai-body strong { color:var(--sun); font-weight:600; }
+  .ai-body .neg { color:var(--danger); }
+
+  /* 表格 */
+  table { width:100%; border-collapse:collapse; font-size:13px; }
+  th,td { padding:9px 10px; text-align:left; border-bottom:1px solid var(--border); }
+  th { color:var(--text-3); font-weight:500; font-size:12px; }
+  td { font-variant-numeric:tabular-nums; }
+  tbody tr:hover { background:var(--panel-2); }
+
+  .note { font-size:12px; color:var(--text-3); margin-top:14px;
+    padding-top:14px; border-top:1px solid var(--border); }
+
+/* AI 房评报告卡片 */
+.rv-head{display:flex;align-items:center;gap:14px;margin-bottom:10px}
+.rv-grade{width:52px;height:52px;border:2px solid;border-radius:12px;
+  display:flex;align-items:center;justify-content:center;
+  font-size:26px;font-weight:700;flex:none}
+.rv-headline{font-size:16px;font-weight:600}
+.rv-caveat{color:var(--text-2)}
+.rv-note{font-size:12px;color:var(--text-3)}
+.badge-ai{background:rgba(139,92,246,.18);color:#a78bfa}
+.badge-local{background:rgba(251,191,36,.15);color:#fbbf24}
+.btn-ghost{background:none;border:1px solid var(--border);color:var(--text-2);
+  border-radius:6px;padding:4px 12px;font-size:12px;cursor:pointer}
+.btn-ghost:hover{color:var(--text);border-color:var(--text-3)}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <header>
+    <div>
+      <h1>日光账本 · 房屋采光评估系统</h1>
+      <div class="sub">以房屋为维度，评估每个房间的真实采光能力</div>
+    </div>
+    <div class="header-actions">
+      <button class="btn" id="refreshBtn">刷新</button>
+    </div>
+  </header>
+
+  <div class="panel">
+    <h2><span class="dot" style="background:var(--accent)"></span>选择房屋</h2>
+    <div class="house-tabs" id="houseTabs"></div>
+    <div class="note" style="border:none;padding-top:12px;margin-top:4px">
+      <strong style="color:var(--text-2)">设备状态：</strong>
+      <div class="health" id="health"></div>
+    </div>
+  </div>
+
+  <div class="panel">
+    <h2><span class="dot" style="background:var(--sun)"></span>房间采光评分</h2>
+    <div class="rooms" id="rooms"></div>
+  </div>
+
+  <div class="panel">
+    <h2><span class="dot" style="background:var(--accent)"></span>
+      <span id="chartTitle">光照曲线</span></h2>
+    <div class="toolbar">
+      <label for="metricSel">显示</label>
+      <select id="metricSel">
+        <option value="hourly">当日曲线（自然光 / 灯光）</option>
+        <option value="daily">多日累计</option>
+      </select>
+      <label for="daysSel">统计天数</label>
+      <select id="daysSel">
+        <option value="3">3 天（当前）</option>
+        <option value="7">7 天</option>
+        <option value="30">30 天</option>
+      </select>
+    </div>
+    <div class="legend-inline">
+      <span><span class="dot" style="background:var(--sun)"></span>自然采光</span>
+      <span><span class="dot" style="background:var(--lamp)"></span>人工照明（灯光干扰）</span>
+    </div>
+    <div class="chart" id="chartMain"></div>
+    <div class="note" id="chartNote"></div>
+  </div>
+
+  <div class="panel">
+    <h2><span class="dot" style="background:var(--accent)"></span>房间横向对比</h2>
+    <div id="cmpBars"></div>
+    <div class="note" id="cmpNote"></div>
+  </div>
+
+  <div class="panel">
+    <h2><span class="dot" style="background:var(--warn)"></span>关键发现</h2>
+    <div id="findings"></div>
+  </div>
+
+  <div class="panel">
+    <div class="ai-head">
+      <h2 style="margin:0"><span class="dot" style="background:#8b5cf6"></span>AI 房评报告</h2>
+      <span class="badge" id="reviewSource">加载中</span>
+      <button id="btnReview" class="btn-ghost" style="margin-left:auto">重新生成</button>
+    </div>
+    <div id="reviewCard"><div class="empty">正在读取该房间的光况数据…</div></div>
+    <div class="note">
+      报告由云端模型基于该房间实测光况时序生成；模型不可用时退回本地统计，
+      徽章会如实标注来源。光况分级由固定规则计算，任何时候可审计。
+      光敏无照度标定，报告只给相对光况结论，不含 lux 绝对值。
+    </div>
+  </div>
+
+  <div class="panel">
+    <h2><span class="dot" style="background:var(--warn)"></span>事件记录</h2>
+    <table>
+      <thead><tr><th>时间</th><th>类型</th><th>内容</th><th>确认</th></tr></thead>
+      <tbody id="events"></tbody>
+    </table>
+    <div class="note">设备离线、传感器读数异常（如饱和率过高、峰值恒定疑装反）会在此列出。</div>
+  </div>
+
+  <div class="panel">
+    <h2><span class="dot" style="background:var(--text-3)"></span>日账明细</h2>
+    <table>
+      <thead><tr>
+        <th>日期</th><th>有效日照</th><th>峰值</th>
+        <th>灯光虚增</th><th>评分</th><th>档位</th>
+      </tr></thead>
+      <tbody id="ledgerBody"></tbody>
+    </table>
+    <div class="note">
+      说明：<strong style="color:var(--sun)">有效日照</strong>为扣除人工照明后的净日照时长。
+      若按总照度直接统计，会把夜晚开灯的时间误算进去，导致评分虚高。
+      数据来自设备实时上报并持久化到数据库。
+    </div>
+  </div>
+
+</div>
+<script src="/app.js"></script>
+</body>
+</html>
