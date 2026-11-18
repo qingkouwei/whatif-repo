@@ -115,7 +115,7 @@ def main():
             c.execute("""INSERT INTO devices
                          (device_id,room_id,model,status,csq,last_seen_at)
                          VALUES (?,?,?,?,?,?)""",
-                      (dev, room_id, "QuecDuino-EG800Z", "online",
+                      (dev, room_id, "QuecDuino-EC800", "online",
                        random.randint(12, 25), now.strftime("%Y-%m-%d %H:%M:%S")))
 
         # 生成 3 天数据，每 10 分钟一个点

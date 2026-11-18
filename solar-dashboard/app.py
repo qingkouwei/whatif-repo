@@ -161,11 +161,11 @@ async def register_device(dev, payload):
             (dev, room_id))
     await _db.execute(
         """INSERT INTO devices (device_id, room_id, model, firmware, status)
-           SELECT ?, ?, 'QuecDuino-EG800Z', ?, 'online' WHERE NOT EXISTS
+           SELECT ?, ?, 'QuecDuino-EC800', ?, 'online' WHERE NOT EXISTS
            (SELECT 1 FROM devices WHERE device_id = ?)""",
         (dev, room_id, payload.get("fw"), dev))
     await _db.execute(
-        "UPDATE devices SET firmware=?, model='QuecDuino-EG800Z' WHERE device_id=?",
+        "UPDATE devices SET firmware=?, model='QuecDuino-EC800' WHERE device_id=?",
         (payload.get("fw"), dev))
     await _db.commit()
 
