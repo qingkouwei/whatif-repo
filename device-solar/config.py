@@ -27,6 +27,10 @@ FIRMWARE = "v2.0"
 # 官方硬件手册要求分压电阻上端（电源侧）阻值在 100k~1M 之间，
 # 总阻值过小会对信号源形成过重负载。默认 100k/100k，分压比 0.5。
 ADC_CHANNEL = "ADC1"                 # 只有 A0/A1 是 ADC 输入，A5 不是
+UTC_OFFSET_H = 8                     # ★ 模组未同步时区时 localtime() 是 UTC（实测
+                                     # ts_ms 恒慢 8h）。白天判定与上报 ts 都要 +8 校正，
+                                     # 否则北京白天=模组凌晨，日照会被误判成夜间灯事件。
+                                     # 若日后接入 NITZ/手动校时把本值改回 0。
 DIVIDER_R1_KOHM = 100.0              # 电源侧
 DIVIDER_R2_KOHM = 100.0              # GND 侧
 LIGHT_INVERT = False                 # 实测：光越强分压节点电压越高。
