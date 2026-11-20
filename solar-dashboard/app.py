@@ -407,10 +407,13 @@ async def device_live(dev_id: str, minutes: int = Query(20, ge=1, le=120)):
 
     与 room_curve 的区别：按 device 查（真机/mock 都行，不必先建房间视图），
     且返回带分量与饱和度，供前端画滚动波形 + 握/照手势对比。
+    raw 一并返回：真机的 natural_mv 是滚动窗口聚合值（慢、抗抖），
+    raw 才是最新瞬时读数——演示"波形在动"要看 raw。
     """
     since = (datetime.now() - timedelta(minutes=minutes)).strftime("%Y-%m-%d %H:%M:%S")
     async with _db.execute(
-        """SELECT r.ts, r.natural_mv, r.lamp_mv, r.temp_c, r.rh, r.in_sun, r.seq
+        """SELECT r.ts, r.natural_mv, r.lamp_mv, r.temp_c, r.rh, r.in_sun, r.seq,
+                  r.raw, r.lux
            FROM readings r JOIN rooms m ON m.id = r.room_id
            WHERE m.device_id = ? AND r.ts >= ? ORDER BY r.id ASC""",
         (dev_id, since)) as cur:
@@ -419,8 +422,17 @@ async def device_live(dev_id: str, minutes: int = Query(20, ge=1, le=120)):
         """SELECT d.status, d.csq, d.last_seen_at, d.firmware
            FROM devices d WHERE d.device_id = ?""", (dev_id,)) as cur:
         meta = await cur.fetchone()
+    if meta is None:
+        # 设备查不到时把在用的设备号吐回来——调试页 URL 里打错一个字符
+        # （solar-mock-0 少了个 1）页面只会说"等待数据"，最难自查
+        async with _db.execute(
+            """SELECT device_id, status, last_seen_at FROM devices
+               ORDER BY last_seen_at DESC LIMIT 8""") as cur:
+            known = [dict(r) for r in await cur.fetchall()]
+    else:
+        known = None
     return {"dev": dev_id, "meta": dict(meta) if meta else None,
-            "series": rows}
+            "known_devices": known, "series": rows}
 
 
 class CmdRequest(BaseModel):

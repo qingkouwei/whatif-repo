@@ -44,8 +44,9 @@
 
   <canvas id="wave"></canvas>
   <div class="legend" id="legend">
-    <span style="margin-left:0"><i style="background:#E8B34B"></i>自然光</span>
-    <span><i style="background:#8B7FD4"></i>灯光</span>
+    <span style="margin-left:0"><i style="background:#fff"></i>瞬时读数 raw</span>
+    <span><i style="background:#E8B34B"></i>自然光(窗口聚合)</span>
+    <span><i style="background:#8B7FD4"></i>自然光+灯光</span>
     <span><i style="background:#3A4A58"></i>400mV 有效日照线</span>
     <span><i style="background:#E07A5F"></i>1150mV 饱和线</span>
   </div>
@@ -54,7 +55,7 @@
 
   <div class="note" id="note">
     口径说明：本页数据来自 <b>solar-mock-01</b>（模拟设备，走与真机相同的 MQTT→入库→接口链路）。
-    设备实体在场时把 dev 参数换成 <b>solar-ledger-02</b>，页面原样可用。
+    设备实体在场时把 URL 的 dev 换成实际设备号（如 <b>whatif-merged-01</b>）即可：白线 raw 是每帧瞬时读数（握住/打光会立刻动），黄线是滚动窗口聚合值（算账用，天然慢）。
     演示节拍 2 秒/帧（真机 300 秒/帧）——为的是让观众当场看到波形响应。
   </div>
 
@@ -95,6 +96,12 @@ async function tick() {
       `设备 <b>${DEV}</b> · ` + (m.status === "online"
         ? '<b>在线</b>' : '<b class="off">离线</b>') +
       ` · CSQ ${m.csq ?? "—"} · fw ${m.firmware ?? "—"} · ${s.length} 帧/10min`;
+    if (r.meta === null && r.known_devices) {
+      document.getElementById("meta").innerHTML =
+        '⚠ 没有设备 <b>' + DEV + '</b>，在用设备：' +
+        r.known_devices.map(d => '<a href="?dev=' + d.device_id + '" style="color:#8FC77F;text-decoration:none;margin-right:14px">' + d.device_id + '</a>').join('');
+      draw([]); return;
+    }
     if (s.length) {
       const n = s[s.length - 1];
       document.getElementById("vNat").textContent = n.natural_mv;
@@ -132,9 +139,15 @@ function draw(s) {
     s.forEach((r, i) => ctx.lineTo(x(i), y(r.natural_mv + r.lamp_mv)));
     s.slice().reverse().forEach((r, j) => ctx.lineTo(x(s.length - 1 - j), y(r.natural_mv)));
     ctx.closePath(); ctx.fillStyle = "rgba(139,127,212,.30)"; ctx.fill();
-    // 主线
-    [["natural_mv", "#E8B34B"], ["lamp_mv", "#8B7FD4"]].forEach(([k, c]) => {
-      ctx.strokeStyle = c; ctx.lineWidth = 2.4 * devicePixelRatio; ctx.beginPath();
+    // 主线：raw = 最新瞬时读数（真机 natural_mv 是滚动窗口聚合，
+    // 演示"动"必须看 raw；mock 两者本就相等）
+    ctx.strokeStyle = "#FFFFFF"; ctx.lineWidth = 2.4 * devicePixelRatio; ctx.beginPath();
+    s.forEach((r, i) => { const v = r.raw != null ? r.raw : (r.natural_mv + r.lamp_mv);
+                           i ? ctx.lineTo(x(i), y(v)) : ctx.moveTo(x(i), y(v)); });
+    ctx.stroke();
+    // natural/lamp 堆叠轮廓作背景参考
+    [["natural_mv", "rgba(232,179,75,.5)"], ["lamp_mv", "rgba(139,127,212,.5)"]].forEach(([k, c]) => {
+      ctx.strokeStyle = c; ctx.lineWidth = 1.4 * devicePixelRatio; ctx.beginPath();
       s.forEach((r, i) => { const v = k === "lamp_mv" ? r.natural_mv + r.lamp_mv : r.natural_mv;
                              i ? ctx.lineTo(x(i), y(v)) : ctx.moveTo(x(i), y(v)); });
       ctx.stroke();
