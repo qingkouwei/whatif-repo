@@ -156,9 +156,13 @@ async def register_device(dev, payload):
             room_id = cur.lastrowid
     else:
         room_id = room["id"]
-        await _db.execute(
-            "UPDATE rooms SET device_id = ?, has_sensor = 1 WHERE id = ?",
-            (dev, room_id))
+        # 房间 device_id 被手动置空 = 维护者主动解绑（暂停入库/清脏数据）。
+        # 自注册只在新建房间时绑定；重绑需人工填回，防止板子重启把
+        # 隔离中的脏数据通道悄悄接回去。
+        if room["device_id"] is not None:
+            await _db.execute(
+                "UPDATE rooms SET device_id = ?, has_sensor = 1 WHERE id = ?",
+                (dev, room_id))
     await _db.execute(
         """INSERT INTO devices (device_id, room_id, model, firmware, status)
            SELECT ?, ?, 'QuecDuino-EC800', ?, 'online' WHERE NOT EXISTS
@@ -411,7 +415,7 @@ async def devices_health():
 
 
 @app.get("/api/devices/{dev_id}/live")
-async def device_live(dev_id: str, minutes: int = Query(20, ge=1, le=120)):
+async def device_live(dev_id: str, minutes: int = Query(20, ge=1, le=1440)):
     """按设备号的实时短窗序列（调试页用）。
 
     与 room_curve 的区别：按 device 查（真机/mock 都行，不必先建房间视图），

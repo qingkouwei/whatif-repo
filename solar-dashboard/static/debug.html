@@ -26,13 +26,24 @@
   .btns button:hover { border-color: #E8B34B; }
   .btns button.on { background: #E8B34B; color: #101418; font-weight: bold; border-color: #E8B34B; }
   .btns button small { display: block; font-size: 11px; opacity: .7; margin-top: 2px; }
-  .note { font-size: 12px; color: #5A6875; margin-top: 14px; line-height: 1.6; }
+  .pulse-dot { animation: pp 1s infinite; }
+@keyframes pp { 0% { box-shadow: 0 0 0 0 rgba(143,199,127,.55); } 70% { box-shadow: 0 0 0 10px rgba(143,199,127,0); } 100% { box-shadow: 0 0 0 0 rgba(143,199,127,0); } }
+#badge { margin-left: 12px; color: #8FC77F; }
+#badge.old { color: #E07A5F; }
+select.win { background: #1F2830; color: #DDE4EA; border: 1px solid #2C3A46; border-radius: 6px; font-size: 12px; margin-left: 10px; }
+.note { font-size: 12px; color: #5A6875; margin-top: 14px; line-height: 1.6; }
 </style>
 </head>
 <body>
   <div class="top">
     <h1>设备调试台 <small>实时光感波形 · 握住 / 手电 / 台灯 场景对比</small></h1>
-    <div class="meta" id="meta">—</div>
+    <div class="meta"><span id="meta">—</span><span id="badge">● 等待数据</span>
+    <select class="win" id="winSel">
+      <option value="10">近 10 分钟</option>
+      <option value="30">近 30 分钟</option>
+      <option value="120">近 2 小时</option>
+      <option value="720" selected>开机以来全部</option>
+    </select></div>
   </div>
 
   <div class="cards">
@@ -40,6 +51,7 @@
     <div class="card"><div class="k">灯光分量 lamp_mv</div><div class="v lamp" id="vLamp">—</div></div>
     <div class="card"><div class="k">温度 ℃（握住会爬升）</div><div class="v t" id="vT">—</div></div>
     <div class="card"><div class="k">湿度 %</div><div class="v h" id="vH">—</div></div>
+  <div class="card"><div class="k">本次会话帧数 seq</div><div class="v" id="vSeq" style="color:#DDE4EA">—</div></div>
   </div>
 
   <canvas id="wave"></canvas>
@@ -87,9 +99,11 @@ SCENES.forEach(s => {
 btns.children[0].classList.add("on");
 
 let lastN = 0;
+const state = { lastSeq: null, isNew: false };
 async function tick() {
+  const mins = document.getElementById("winSel").value;
   try {
-    const r = await (await fetch(`/api/devices/${DEV}/live?minutes=10`)).json();
+    const r = await (await fetch(`/api/devices/${DEV}/live?minutes=${mins}`)).json();
     const s = r.series || [];
     const m = r.meta || {};
     document.getElementById("meta").innerHTML =
@@ -108,8 +122,13 @@ async function tick() {
       document.getElementById("vLamp").textContent = n.lamp_mv;
       document.getElementById("vT").textContent = n.temp_c;
       document.getElementById("vH").textContent = n.rh;
-      if (n.seq !== lastN) { lastN = n.seq; draw(s); }
-      else draw(s);
+      state.isNew = n.seq !== state.lastSeq;
+      state.lastSeq = n.seq;
+      const b = document.getElementById("badge");
+      if (state.isNew) { b.textContent = "● 刚收到第 " + n.seq + " 帧"; b.className = ""; }
+      else { b.textContent = "● 等待下一帧（真机 30s 一报）"; b.className = "old"; }
+      document.getElementById("vSeq").textContent = n.seq ?? "—";
+      draw(s);
     } else draw([]);
   } catch (e) { /* 服务重启瞬间，下一拍重试 */ }
 }
@@ -164,7 +183,14 @@ function draw(s) {
     ctx.fillText(s[0].ts.slice(11, 16), P, H - P + 18 * devicePixelRatio);
     ctx.fillText(s[s.length - 1].ts.slice(11, 16), W - 70 * devicePixelRatio, H - P + 18 * devicePixelRatio);
   } else ctx.fillText("等待数据…", P, H - P - 10);
+  if (s.length) {  // 最新一帧的着陆点：seq 一到它就刷新，值不变也会亮
+    const v = s[s.length-1].raw != null ? s[s.length-1].raw
+            : (s[s.length-1].natural_mv + s[s.length-1].lamp_mv);
+    ctx.fillStyle = "#FFFFFF"; ctx.beginPath();
+    ctx.arc(x(s.length-1), y(v), (state.isNew ? 7 : 5) * devicePixelRatio, 0, 7); ctx.fill();
+  }
 }
+document.getElementById("winSel").onchange = tick;
 tick(); setInterval(tick, 2000);
 </script>
 </body>
