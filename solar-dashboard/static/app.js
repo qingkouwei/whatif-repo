@@ -66,7 +66,13 @@ function renderHouses() {
 async function selectHouse(id) {
   state.houseId = id;
   state.rooms = await api.rooms(id);
-  state.roomId = state.rooms.length ? state.rooms[0].room_id : null;
+  // 默认选中"最近有读数"的房间：按 last_seen_at 取最新，
+  // 没有设备活动的退回第一个。演示场景下旧房间时间窗一过
+  // 曲线就是空的，谁都不想看空页。
+  state.roomId = state.rooms.length
+    ? (state.rooms.slice().sort((a, b) =>
+        String(b.last_seen_at || "").localeCompare(String(a.last_seen_at || "")))[0].room_id)
+    : null;
   renderHouses();
   renderRooms();
   if (state.roomId) await loadRoomData();
