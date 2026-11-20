@@ -205,6 +205,15 @@ async def save_reading(dev, payload):
 
     ts = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
+    # 设备时钟漂移只告警、不改变入库：ts 恒用服务器接收时刻，
+    # 曲线时间正确性与设备时钟彻底解耦。重烧固件(UTC_OFFSET_H=8)后
+    # 这行偏移应归零；持续 -8h ≈ 板子还在跑旧固件。
+    _dev_ts = payload.get("ts")
+    if isinstance(_dev_ts, (int, float)) and _dev_ts > 1700000000:
+        _skew = _dev_ts - time.time()
+        if abs(_skew) > 600:
+            print(f"[CLOCK] {dev} 设备时钟偏差 {_skew/3600:+.1f}h（不影响入库 ts）")
+
     await _db.execute(
         """INSERT INTO readings
            (room_id, ts, ts_ms, natural_mv, lamp_mv, temp_c, rh,
