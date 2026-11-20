@@ -132,13 +132,18 @@ class Uplink(object):
             cmd = ujson.loads(data)
         except ValueError:
             return
-        act = cmd.get("act")
+        # 服务端 /api/cmd 发的键是 "action"，早期约定是 "act"——
+        # 两个都认，否则网页上的调阈值按钮永远石沉大海（联调实测踩过）
+        act = cmd.get("act") or cmd.get("action")
         print("cmd: %s" % act)
         ack = {"type": "ack", "act": act, "ok": 0}
+        # 参数可能平铺在顶层（早期约定），也可能嵌在 config 里
+        # （服务端 /api/cmd 的 CmdRequest 形状），两个位置都找。
+        args = cmd.get("config") or cmd
         if act == "set_threshold":
             try:
                 import config
-                mv = int(cmd.get("mv", 0))
+                mv = int(args.get("mv", 0))
                 if mv > 0:
                     config.SUN_ACTIVE_MV = mv
                     ack.update({"ok": 1, "mv": mv})
@@ -147,8 +152,8 @@ class Uplink(object):
         elif act == "set_divider":
             try:
                 import config
-                r1 = float(cmd.get("r1", config.DIVIDER_R1_KOHM))
-                r2 = float(cmd.get("r2", config.DIVIDER_R2_KOHM))
+                r1 = float(args.get("r1", config.DIVIDER_R1_KOHM))
+                r2 = float(args.get("r2", config.DIVIDER_R2_KOHM))
                 if r1 > 0 and r2 > 0:
                     config.DIVIDER_R1_KOHM = r1
                     config.DIVIDER_R2_KOHM = r2

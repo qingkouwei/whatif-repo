@@ -401,6 +401,28 @@ async def devices_health():
         return [dict(r) for r in await cur.fetchall()]
 
 
+@app.get("/api/devices/{dev_id}/live")
+async def device_live(dev_id: str, minutes: int = Query(20, ge=1, le=120)):
+    """按设备号的实时短窗序列（调试页用）。
+
+    与 room_curve 的区别：按 device 查（真机/mock 都行，不必先建房间视图），
+    且返回带分量与饱和度，供前端画滚动波形 + 握/照手势对比。
+    """
+    since = (datetime.now() - timedelta(minutes=minutes)).strftime("%Y-%m-%d %H:%M:%S")
+    async with _db.execute(
+        """SELECT r.ts, r.natural_mv, r.lamp_mv, r.temp_c, r.rh, r.in_sun, r.seq
+           FROM readings r JOIN rooms m ON m.id = r.room_id
+           WHERE m.device_id = ? AND r.ts >= ? ORDER BY r.id ASC""",
+        (dev_id, since)) as cur:
+        rows = [dict(r) for r in await cur.fetchall()]
+    async with _db.execute(
+        """SELECT d.status, d.csq, d.last_seen_at, d.firmware
+           FROM devices d WHERE d.device_id = ?""", (dev_id,)) as cur:
+        meta = await cur.fetchone()
+    return {"dev": dev_id, "meta": dict(meta) if meta else None,
+            "series": rows}
+
+
 class CmdRequest(BaseModel):
     dev: str
     action: str
