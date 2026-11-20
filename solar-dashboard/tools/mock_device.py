@@ -28,17 +28,42 @@ ROOM = "演示桌"
 TOPIC_UP = "/solar_ledger/%s/up" % DEV
 TOPIC_CMD = "/solar_ledger/%s/cmd" % DEV
 
-SCENES = {
-    # name: (natural 基线mV, 抖动, lamp分量, 温度偏移)
-    "idle":  (180, 12, 0,   0.0),
-    "hand":  (42,   6, 0,   +1.6),
-    "torch": (1050, 40, 0,  0.0),
-    "lamp":  (170, 10, 350, 0.0),
-    "night": (22,   4, 0,   -0.5),
-}
+
+def sun_base_mv(now=None):
+    """真实钟时的日照钟形（晴，与 backfill 同一公式）。
+
+    idle 场景必须跟着太阳走：mock 平线会在"今天"的曲线上
+    留下一条与日照毫无关系的直线，明天演示时一眼假。
+    """
+    lt = time.localtime(now)
+    h = lt.tm_hour + lt.tm_min / 60.0
+    if h < 6 or h > 19:
+        return 0
+    v = math.exp(-((h - 12.7) ** 2) / (2 * 3.3 ** 2))
+    return int(min(1140, v * 1180))
+
+
+def scene_params():
+    """场景基线。握住=遮光比例、手电/night=定值、台灯=日照基线上叠灯。"""
+    scene = state["scene"]
+    sun = sun_base_mv()
+    if scene == "idle":
+        return sun, 12 + sun // 40, 0, 0.0
+    if scene == "hand":
+        # 握住是"遮"，读数应远低于当前自然基线；夜里本来就暗，
+        # 给个略高于背景的读数保证曲线仍在动
+        return max(8, int(sun * 0.10)), 5, 0, +1.6
+    if scene == "torch":
+        return 1050, 40, 0, 0.0
+    if scene == "lamp":
+        return sun, 10, 430, 0.0          # 与回填台灯同口径
+    return 5, 3, 0, -0.5                  # night
 
 state = {"scene": "idle", "day_sun_min": 0.0, "day_naive_min": 0.0,
-         "day_lamp_min": 0.0, "seq": 0, "t0": time.time()}
+         "day_lamp_min": 0.0, "day_date": time.strftime("%Y-%m-%d"),
+         "seq": 0, "t0": time.time()}
+
+SCENE_NAMES = ("idle", "hand", "torch", "lamp", "night")
 
 
 def seed_day_from_ledger(api, dev):
@@ -61,10 +86,15 @@ def seed_day_from_ledger(api, dev):
             api + "/api/rooms/%d/ledger?days=1" % room_id, timeout=5))
         days = led.get("days") or []
         if days:
-            state["day_sun_min"] = float(days[-1].get("sun_minutes") or 0)
-            state["day_naive_min"] = float(days[-1].get("naive_minutes") or 0)
-            print("日账初值: sun=%.1f naive=%.1f" % (
-                state["day_sun_min"], state["day_naive_min"]))
+            today = time.strftime("%Y-%m-%d")
+            state["day_date"] = today
+            for d in days:
+                # 只 seed 今天那一行；昨天的累计拖进今天就是数据错误
+                if d.get("date") == today:
+                    state["day_sun_min"] = float(d.get("sun_minutes") or 0)
+                    state["day_naive_min"] = float(d.get("naive_minutes") or 0)
+            print("日账初值(%s): sun=%.1f naive=%.1f" % (
+                today, state["day_sun_min"], state["day_naive_min"]))
     except Exception as e:
         print("读日账失败（从 0 累计）:", e)
 
@@ -77,7 +107,7 @@ def on_cmd(client, userdata, msg):
     # 调试页经 /api/cmd 下发：{"action":..., "config":{...}}；也兼容 act 键
     act = c.get("action") or c.get("act")
     args = c.get("config") or {}
-    if act == "gesture" and args.get("scene") in SCENES:
+    if act == "gesture" and args.get("scene") in SCENE_NAMES:
         state["scene"] = args["scene"]
         print(">>> 场景切换: %s" % act, args["scene"], flush=True)
 
@@ -102,8 +132,11 @@ def main():
     seed_day_from_ledger(args.api, DEV)
 
     while True:
-        on_cmd_pending = cli  # noqa: loop_start 已处理回调
-        base, jit, lamp, doff = SCENES[state["scene"]]
+        today = time.strftime("%Y-%m-%d")
+        if today != state["day_date"]:          # 跨午夜：日账归零开新页
+            state["day_date"] = today
+            state["day_sun_min"] = state["day_naive_min"] = state["day_lamp_min"] = 0.0
+        base, jit, lamp, doff = scene_params()
         t = time.time() - state["t0"]
         wobble = 1.0 + 0.06 * math.sin(t / 23.0) + random.uniform(-0.02, 0.02)
         natural = max(0, int(base * wobble + random.uniform(-jit, jit)))
