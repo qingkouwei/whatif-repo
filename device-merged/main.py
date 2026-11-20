@@ -41,12 +41,17 @@ from lib.aht20 import AHT20
 from lib.queue import OfflineQueue
 from lib.solar_uplink import Uplink as SolarUplink
 
-VERSION = "0.2.0-merged"
+VERSION = "0.3.0-merged-tzfix"
+
+
+def bj_now():
+    """北京时间 epoch 秒：模组时钟恒 UTC，统一在这一处加偏移。"""
+    return int(utime.time()) + int(getattr(config, "UTC_OFFSET_H", 0)) * 3600
 
 
 def log(msg):
     try:
-        stamp = utime.localtime().strftime("%m-%d %H:%M:%S")
+        stamp = utime.localtime(bj_now()).strftime("%m-%d %H:%M:%S")
     except Exception:
         stamp = "--:--:--"
     print("[%s] %s" % (stamp, msg))
@@ -250,8 +255,9 @@ class SolarTask(object):
                     "total": 0, "date": "", "peak": 0}
 
     def tick(self, now_ms):
-        t = utime.localtime()
-        bucket = self.light.sample(int(utime.time()), t[3], t[4])
+        epoch = bj_now()
+        t = utime.localtime(epoch)
+        bucket = self.light.sample(epoch, t[3], t[4])
         date_key = "%04d-%02d-%02d" % (t[0], t[1], t[2])
         if date_key != self.day["date"]:
             self.day.update({"date": date_key, "sun_min": 0.0, "lamp_min": 0.0,
@@ -273,7 +279,7 @@ class SolarTask(object):
             lamp_key = "lamp_lux" if is_bh else "lamp_mv"
             payload = {
                 "type": "reading",
-                "ts": int(utime.time()), "ts_ms": int(utime.time()) * 1000,
+                "ts": epoch, "ts_ms": epoch * 1000,
                 "natural_mv": snap.get(nat_key, 0),
                 "lamp_mv": snap.get(lamp_key, 0),
                 "sun_min": snap["sun_min_sum"],

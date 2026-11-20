@@ -8,6 +8,12 @@
 FORCE_ADC=True，别一上来就强制（强制会把悬空随机值当真数据上报）。
 """
 
+# ★ 模组 utime.time()/localtime() 是 UTC（NITZ 双重时区实测无法归零，
+# setTimeZone(0) 无效）。本地时区按小时数校正，北京=8。
+# 不校正的后果：白天判定(7-18点)把北京白天当凌晨，光照全走"夜间灯事件"，
+# 日照账本与上报 ts 全部错位。
+UTC_OFFSET_H = 8
+
 DEVICE_ID = "whatif-merged-01"
 ROOM_NAME = "演示房间"           # 光照链路注册到看板用这个名字
 FIRMWARE = "0.2.0-merged"
