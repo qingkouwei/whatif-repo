@@ -52,7 +52,8 @@ async def init_db():
         await _db.executescript(f.read())
     # 轻量迁移：旧库补列（CREATE IF NOT EXISTS 不会给已存在的表加列）。
     # inst_mv = 设备瞬时读数，账本不用它，调试台画快线用。
-    cols = [r["name"] async for r in _db.execute("PRAGMA table_info(readings)")]
+    async with _db.execute("PRAGMA table_info(readings)") as _cur:
+        cols = [r["name"] for r in await _cur.fetchall()]
     if "inst_mv" not in cols:
         await _db.execute("ALTER TABLE readings ADD COLUMN inst_mv INTEGER")
     await _db.commit()
