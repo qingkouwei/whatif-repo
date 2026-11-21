@@ -44,6 +44,20 @@ from lib.solar_uplink import Uplink as SolarUplink
 VERSION = "0.3.0-merged-tzfix"
 
 
+def ntp_sync():
+    """NTP 权威对时：ntptime.settime() 把模组 UTC 钟对准，
+    设备 ts 真值 = 对时后的 UTC 秒经 bj_now() +8。单次对时只正起点，
+    晶振会漂，靠主循环每 30 分钟重同步兜住。"""
+    try:
+        import ntptime
+        ntptime.settime()
+        log("NTP 对时完成 ts=%s" % bj_now())
+        return True
+    except Exception as e:
+        log("NTP 对时失败：%s（继续用本地钟，下轮重试）" % e)
+        return False
+
+
 def bj_now():
     """北京时间 epoch 秒：模组时钟恒 UTC，统一在这一处加偏移。"""
     return int(utime.time()) + int(getattr(config, "UTC_OFFSET_H", 0)) * 3600
@@ -372,10 +386,16 @@ def main():
     last_solar = 0
     last_prox = 0
     last_env = 0
+    last_ntp = utime.ticks_ms()        # 30 分钟 NTP 重同步锚点
     last_temp_c = None
 
     while True:
         now = utime.ticks_ms()
+
+        # 每 30 分钟重对时：晶振漂移 + 断网重连后时钟可能整体偏走
+        if utime.ticks_diff(now, last_ntp) >= config.NTP_RESYNC_S * 1000:
+            last_ntp = now
+            ntp_sync()
 
         # 每 60s：温度刷新超声除数（展厅人气一多温度就爬，除数不跟着走距离会漂）
         if utime.ticks_diff(now, last_env) >= 60000:

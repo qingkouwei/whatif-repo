@@ -13,6 +13,7 @@ FORCE_ADC=True，别一上来就强制（强制会把悬空随机值当真数据
 # 不校正的后果：白天判定(7-18点)把北京白天当凌晨，光照全走"夜间灯事件"，
 # 日照账本与上报 ts 全部错位。
 UTC_OFFSET_H = 8
+NTP_RESYNC_S = 1800    # 30 分钟 NTP 重同步（启动即先对一次，见 main.ntp_sync）
 
 DEVICE_ID = "whatif-merged-01"
 ROOM_NAME = "演示房间"           # 光照链路注册到看板用这个名字
