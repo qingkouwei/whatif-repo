@@ -154,7 +154,7 @@ def main():
         payload = {
             "type": "reading", "dev": DEV,
             "ts": int(now), "ts_ms": int(now * 1000), "seq": state["seq"],
-            "natural_mv": natural, "lamp_mv": lamp,
+            "natural_mv": natural, "lamp_mv": lamp, "inst_mv": natural,
             "temp": round(24.6 + doff + 0.2 * math.sin(t / 50.0), 1),
             "rh": round(48.0 - natural / 200.0, 1),
             "lux": natural, "sun_min": round(state["day_sun_min"], 1),

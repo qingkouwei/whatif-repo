@@ -181,6 +181,11 @@ class LightSensor(object):
 
     # ------------------------------------------------------------------
 
+    def last(self):
+        """最近一次瞬时读数（mV）。账本用窗口聚合，调试台画这条快线——
+        遮光/打光要当场看到反应，等窗口滑出就错过演示了。"""
+        return int(self._prev_mv) if self._prev_mv is not None else 0
+
     def snapshot(self):
         """上报用的近窗统计。
 

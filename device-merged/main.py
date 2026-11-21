@@ -296,6 +296,9 @@ class SolarTask(object):
                 "ts": epoch, "ts_ms": epoch * 1000,
                 "natural_mv": snap.get(nat_key, 0),
                 "lamp_mv": snap.get(lamp_key, 0),
+                # 瞬时读数：账本口径不变（聚合值），只给调试台画"快线"。
+                # 旧版服务端不认识这个键，多传无害。
+                "inst_mv": self.light.last(),
                 "sun_min": snap["sun_min_sum"],
                 "naive_sun_min": round(snap["sun_min_sum"] + snap["lamp_min_sum"], 1),
                 "peak": self.day["peak"],

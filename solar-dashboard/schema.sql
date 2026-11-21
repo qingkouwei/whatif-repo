@@ -73,6 +73,7 @@ CREATE TABLE IF NOT EXISTS readings (
     sun_min     INTEGER NOT NULL DEFAULT 0,    -- 截至该时刻的累计有效日照
     in_sun      INTEGER NOT NULL DEFAULT 0,    -- 该点是否处于有效日照中
     raw         INTEGER NOT NULL,              -- ADC 原始读数，供复查
+    inst_mv     INTEGER,                       -- 设备瞬时读数(mV/lux)：账本不用，调试台快线用
     seq         INTEGER,                       -- 设备端序号，用于去重
     created_at  TEXT    NOT NULL DEFAULT (datetime('now', 'localtime')),
     FOREIGN KEY (room_id) REFERENCES rooms(id) ON DELETE CASCADE

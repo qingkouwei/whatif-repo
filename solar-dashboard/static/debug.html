@@ -56,7 +56,7 @@ select.win { background: #1F2830; color: #DDE4EA; border: 1px solid #2C3A46; bor
 
   <canvas id="wave"></canvas>
   <div class="legend" id="legend">
-    <span style="margin-left:0"><i style="background:#fff"></i>瞬时读数 raw</span>
+    <span style="margin-left:0"><i style="background:#fff"></i>瞬时读数 inst_mv</span>
     <span><i style="background:#E8B34B"></i>自然光(窗口聚合)</span>
     <span><i style="background:#8B7FD4"></i>自然光+灯光</span>
     <span><i style="background:#3A4A58"></i>400mV 有效日照线</span>
@@ -161,7 +161,8 @@ function draw(s) {
     // 主线：raw = 最新瞬时读数（真机 natural_mv 是滚动窗口聚合，
     // 演示"动"必须看 raw；mock 两者本就相等）
     ctx.strokeStyle = "#FFFFFF"; ctx.lineWidth = 2.4 * devicePixelRatio; ctx.beginPath();
-    s.forEach((r, i) => { const v = r.raw != null ? r.raw : (r.natural_mv + r.lamp_mv);
+    s.forEach((r, i) => { const v = r.inst_mv != null ? r.inst_mv
+                           : (r.raw != null ? r.raw : (r.natural_mv + r.lamp_mv));
                            i ? ctx.lineTo(x(i), y(v)) : ctx.moveTo(x(i), y(v)); });
     ctx.stroke();
     // natural/lamp 堆叠轮廓作背景参考
@@ -184,8 +185,9 @@ function draw(s) {
     ctx.fillText(s[s.length - 1].ts.slice(11, 16), W - 70 * devicePixelRatio, H - P + 18 * devicePixelRatio);
   } else ctx.fillText("等待数据…", P, H - P - 10);
   if (s.length) {  // 最新一帧的着陆点：seq 一到它就刷新，值不变也会亮
-    const v = s[s.length-1].raw != null ? s[s.length-1].raw
-            : (s[s.length-1].natural_mv + s[s.length-1].lamp_mv);
+    const v = s[s.length-1].inst_mv != null ? s[s.length-1].inst_mv
+            : (s[s.length-1].raw != null ? s[s.length-1].raw
+               : (s[s.length-1].natural_mv + s[s.length-1].lamp_mv));
     ctx.fillStyle = "#FFFFFF"; ctx.beginPath();
     ctx.arc(x(s.length-1), y(v), (state.isNew ? 7 : 5) * devicePixelRatio, 0, 7); ctx.fill();
   }

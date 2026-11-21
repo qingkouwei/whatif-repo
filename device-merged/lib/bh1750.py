@@ -184,6 +184,10 @@ class BH1750Sensor(object):
             self._completed = self._completed[-keep:]
         return out
 
+    def last(self):
+        """最近一次瞬时读数（lux），与 light.last() 同接口。"""
+        return int(self._prev_lux) if self._prev_lux is not None else 0
+
     def snapshot(self):
         w = self._completed
         if not w:

@@ -50,6 +50,11 @@ async def init_db():
     _db.row_factory = aiosqlite.Row
     with open(SCHEMA_PATH, encoding="utf-8") as f:
         await _db.executescript(f.read())
+    # 轻量迁移：旧库补列（CREATE IF NOT EXISTS 不会给已存在的表加列）。
+    # inst_mv = 设备瞬时读数，账本不用它，调试台画快线用。
+    cols = [r["name"] async for r in _db.execute("PRAGMA table_info(readings)")]
+    if "inst_mv" not in cols:
+        await _db.execute("ALTER TABLE readings ADD COLUMN inst_mv INTEGER")
     await _db.commit()
 
 
@@ -221,11 +226,12 @@ async def save_reading(dev, payload):
     await _db.execute(
         """INSERT INTO readings
            (room_id, ts, ts_ms, natural_mv, lamp_mv, temp_c, rh,
-            lux, sun_min, in_sun, raw, seq)
-           VALUES (?,?,?,?,?,?,?,?,?,?,?,?)""",
+            lux, sun_min, in_sun, raw, inst_mv, seq)
+           VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)""",
         (room_id, ts, payload.get("ts_ms", 0), natural, lamp,
          payload.get("temp"), payload.get("rh"), payload.get("lux"),
-         sun_min, in_sun, payload.get("raw", natural + lamp), seq))
+         sun_min, in_sun, payload.get("raw", natural + lamp),
+         payload.get("inst_mv"), seq))
     await _db.commit()
 
     # 顺带更新日账的累计值。
@@ -426,7 +432,7 @@ async def device_live(dev_id: str, minutes: int = Query(20, ge=1, le=1440)):
     since = (datetime.now() - timedelta(minutes=minutes)).strftime("%Y-%m-%d %H:%M:%S")
     async with _db.execute(
         """SELECT r.ts, r.natural_mv, r.lamp_mv, r.temp_c, r.rh, r.in_sun, r.seq,
-                  r.raw, r.lux
+                  r.raw, r.lux, r.inst_mv
            FROM readings r JOIN rooms m ON m.id = r.room_id
            WHERE m.device_id = ? AND r.ts >= ? ORDER BY r.id ASC""",
         (dev_id, since)) as cur:
