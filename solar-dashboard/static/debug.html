@@ -1,0 +1,197 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>设备调试台 · 实时光感波形</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { background: #101418; color: #DDE4EA; font-family: "PingFang SC","Microsoft YaHei",sans-serif; padding: 22px 28px; }
+  h1 { font-size: 20px; }
+  h1 small { color: #5A6875; font-size: 12px; margin-left: 12px; font-weight: normal; }
+  .top { display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 14px; }
+  .meta { font-size: 12px; color: #5A6875; }
+  .meta b { color: #8FC77F; } .meta b.off { color: #E07A5F; }
+  .cards { display: flex; gap: 14px; margin-bottom: 16px; }
+  .card { flex: 1; background: #181E24; border-radius: 8px; padding: 12px 16px; }
+  .card .k { font-size: 11px; color: #5A6875; }
+  .card .v { font-size: 22px; font-weight: bold; margin-top: 4px; font-variant-numeric: tabular-nums; }
+  .v.nat { color: #E8B34B; } .v.lamp { color: #8B7FD4; } .v.t { color: #8FC77F; } .v.h { color: #6FB3D2; }
+  canvas { width: 100%; height: 320px; background: #181E24; border-radius: 8px; display: block; }
+  .legend { font-size: 11px; color: #5A6875; margin: 8px 2px 16px; }
+  .legend i { display: inline-block; width: 18px; height: 3px; vertical-align: 2px; margin: 0 6px 0 12px; }
+  .btns { display: flex; gap: 10px; flex-wrap: wrap; }
+  .btns button { background: #1F2830; color: #DDE4EA; border: 1px solid #2C3A46;
+                 border-radius: 8px; padding: 13px 22px; font-size: 15px; cursor: pointer; }
+  .btns button:hover { border-color: #E8B34B; }
+  .btns button.on { background: #E8B34B; color: #101418; font-weight: bold; border-color: #E8B34B; }
+  .btns button small { display: block; font-size: 11px; opacity: .7; margin-top: 2px; }
+  .pulse-dot { animation: pp 1s infinite; }
+@keyframes pp { 0% { box-shadow: 0 0 0 0 rgba(143,199,127,.55); } 70% { box-shadow: 0 0 0 10px rgba(143,199,127,0); } 100% { box-shadow: 0 0 0 0 rgba(143,199,127,0); } }
+#badge { margin-left: 12px; color: #8FC77F; }
+#badge.old { color: #E07A5F; }
+select.win { background: #1F2830; color: #DDE4EA; border: 1px solid #2C3A46; border-radius: 6px; font-size: 12px; margin-left: 10px; }
+.note { font-size: 12px; color: #5A6875; margin-top: 14px; line-height: 1.6; }
+</style>
+</head>
+<body>
+  <div class="top">
+    <h1>设备调试台 <small>实时光感波形 · 握住 / 手电 / 台灯 场景对比</small></h1>
+    <div class="meta"><span id="meta">—</span><span id="badge">● 等待数据</span>
+    <select class="win" id="winSel">
+      <option value="10">近 10 分钟</option>
+      <option value="30">近 30 分钟</option>
+      <option value="120">近 2 小时</option>
+      <option value="720" selected>开机以来全部</option>
+    </select></div>
+  </div>
+
+  <div class="cards">
+    <div class="card"><div class="k">自然光分量 natural_mv</div><div class="v nat" id="vNat">—</div></div>
+    <div class="card"><div class="k">灯光分量 lamp_mv</div><div class="v lamp" id="vLamp">—</div></div>
+    <div class="card"><div class="k">温度 ℃（握住会爬升）</div><div class="v t" id="vT">—</div></div>
+    <div class="card"><div class="k">湿度 %</div><div class="v h" id="vH">—</div></div>
+  <div class="card"><div class="k">本次会话帧数 seq</div><div class="v" id="vSeq" style="color:#DDE4EA">—</div></div>
+  </div>
+
+  <canvas id="wave"></canvas>
+  <div class="legend" id="legend">
+    <span style="margin-left:0"><i style="background:#fff"></i>瞬时读数 raw</span>
+    <span><i style="background:#E8B34B"></i>自然光(窗口聚合)</span>
+    <span><i style="background:#8B7FD4"></i>自然光+灯光</span>
+    <span><i style="background:#3A4A58"></i>400mV 有效日照线</span>
+    <span><i style="background:#E07A5F"></i>1150mV 饱和线</span>
+  </div>
+
+  <div class="btns" id="btns"></div>
+
+  <div class="note" id="note">
+    口径说明：本页数据来自 <b>solar-mock-01</b>（模拟设备，走与真机相同的 MQTT→入库→接口链路）。
+    设备实体在场时把 URL 的 dev 换成实际设备号（如 <b>whatif-merged-01</b>）即可：白线 raw 是每帧瞬时读数（握住/打光会立刻动），黄线是滚动窗口聚合值（算账用，天然慢）。
+    演示节拍 2 秒/帧（真机 300 秒/帧）——为的是让观众当场看到波形响应。
+  </div>
+
+<script>
+const Q = new URLSearchParams(location.search);
+const DEV = Q.get("dev") || "solar-mock-01";
+const SCENES = [
+  ["idle",  "静置",   "室内自然微光"],
+  ["hand",  "握住",   "遮光 + 体温爬升"],
+  ["torch", "手电",   "直射接近饱和"],
+  ["lamp",  "台灯",   "阶跃 → 灯光分量"],
+  ["night", "熄灯",   "暗背景基线"],
+];
+const btns = document.getElementById("btns");
+SCENES.forEach(s => {
+  const b = document.createElement("button");
+  b.innerHTML = s[1] + "<small>" + s[2] + "</small>";
+  b.onclick = async () => {
+    await fetch("/api/cmd", { method: "POST", headers: {"Content-Type": "application/json"},
+      body: JSON.stringify({ dev: DEV, action: "gesture", config: { scene: s[0] } }) });
+    [...btns.children].forEach(c => c.classList.remove("on"));
+    b.classList.add("on");
+    document.getElementById("note").innerHTML =
+      "已下发场景 <b>" + s[1] + "</b>（" + s[0] + "）→ " + DEV +
+      "，波形 2 秒内响应。真机在场时 gesture 不影响传感器读数，请把 dev 换成实际设备并现场演示真实动作。";
+  };
+  btns.appendChild(b);
+});
+btns.children[0].classList.add("on");
+
+let lastN = 0;
+const state = { lastSeq: null, isNew: false };
+async function tick() {
+  const mins = document.getElementById("winSel").value;
+  try {
+    const r = await (await fetch(`/api/devices/${DEV}/live?minutes=${mins}`)).json();
+    const s = r.series || [];
+    const m = r.meta || {};
+    document.getElementById("meta").innerHTML =
+      `设备 <b>${DEV}</b> · ` + (m.status === "online"
+        ? '<b>在线</b>' : '<b class="off">离线</b>') +
+      ` · CSQ ${m.csq ?? "—"} · fw ${m.firmware ?? "—"} · ${s.length} 帧/10min`;
+    if (r.meta === null && r.known_devices) {
+      document.getElementById("meta").innerHTML =
+        '⚠ 没有设备 <b>' + DEV + '</b>，在用设备：' +
+        r.known_devices.map(d => '<a href="?dev=' + d.device_id + '" style="color:#8FC77F;text-decoration:none;margin-right:14px">' + d.device_id + '</a>').join('');
+      draw([]); return;
+    }
+    if (s.length) {
+      const n = s[s.length - 1];
+      document.getElementById("vNat").textContent = n.natural_mv;
+      document.getElementById("vLamp").textContent = n.lamp_mv;
+      document.getElementById("vT").textContent = n.temp_c;
+      document.getElementById("vH").textContent = n.rh;
+      state.isNew = n.seq !== state.lastSeq;
+      state.lastSeq = n.seq;
+      const b = document.getElementById("badge");
+      if (state.isNew) { b.textContent = "● 刚收到第 " + n.seq + " 帧"; b.className = ""; }
+      else { b.textContent = "● 等待下一帧（真机 30s 一报）"; b.className = "old"; }
+      document.getElementById("vSeq").textContent = n.seq ?? "—";
+      draw(s);
+    } else draw([]);
+  } catch (e) { /* 服务重启瞬间，下一拍重试 */ }
+}
+function draw(s) {
+  const cv = document.getElementById("wave"), ctx = cv.getContext("2d");
+  const W = cv.width = cv.clientWidth * devicePixelRatio;
+  const H = cv.height = cv.clientHeight * devicePixelRatio;
+  ctx.clearRect(0, 0, W, H);
+  const P = 42 * devicePixelRatio, MAXV = 1250;
+  const x = i => P + i * (W - P - 14) / Math.max(1, s.length - 1);
+  const y = v => H - P - (Math.min(v, MAXV) / MAXV) * (H - P * 1.6);
+  // 参考线
+  [[400, "#3A4A58", "400"], [1150, "#E07A5F", "1150"]].forEach(([v, c, t]) => {
+    ctx.strokeStyle = c; ctx.setLineDash([6, 6]); ctx.lineWidth = 1;
+    ctx.beginPath(); ctx.moveTo(P, y(v)); ctx.lineTo(W - 14, y(v)); ctx.stroke();
+    ctx.setLineDash([]);
+    ctx.fillStyle = c; ctx.font = (11 * devicePixelRatio) + "px sans-serif";
+    ctx.fillText(t + "mV", W - 62 * devicePixelRatio, y(v) - 5);
+  });
+  // 堆叠面积：natural 打底，lamp 叠加
+  if (s.length > 1) {
+    ctx.beginPath(); ctx.moveTo(x(0), y(0));
+    s.forEach((r, i) => ctx.lineTo(x(i), y(r.natural_mv)));
+    ctx.lineTo(x(s.length - 1), y(0)); ctx.closePath();
+    ctx.fillStyle = "rgba(232,179,75,.28)"; ctx.fill();
+    ctx.beginPath(); ctx.moveTo(x(0), y(0));
+    s.forEach((r, i) => ctx.lineTo(x(i), y(r.natural_mv + r.lamp_mv)));
+    s.slice().reverse().forEach((r, j) => ctx.lineTo(x(s.length - 1 - j), y(r.natural_mv)));
+    ctx.closePath(); ctx.fillStyle = "rgba(139,127,212,.30)"; ctx.fill();
+    // 主线：raw = 最新瞬时读数（真机 natural_mv 是滚动窗口聚合，
+    // 演示"动"必须看 raw；mock 两者本就相等）
+    ctx.strokeStyle = "#FFFFFF"; ctx.lineWidth = 2.4 * devicePixelRatio; ctx.beginPath();
+    s.forEach((r, i) => { const v = r.raw != null ? r.raw : (r.natural_mv + r.lamp_mv);
+                           i ? ctx.lineTo(x(i), y(v)) : ctx.moveTo(x(i), y(v)); });
+    ctx.stroke();
+    // natural/lamp 堆叠轮廓作背景参考
+    [["natural_mv", "rgba(232,179,75,.5)"], ["lamp_mv", "rgba(139,127,212,.5)"]].forEach(([k, c]) => {
+      ctx.strokeStyle = c; ctx.lineWidth = 1.4 * devicePixelRatio; ctx.beginPath();
+      s.forEach((r, i) => { const v = k === "lamp_mv" ? r.natural_mv + r.lamp_mv : r.natural_mv;
+                             i ? ctx.lineTo(x(i), y(v)) : ctx.moveTo(x(i), y(v)); });
+      ctx.stroke();
+    });
+    // 在日照点打绿标
+    ctx.fillStyle = "#8FC77F";
+    s.forEach((r, i) => { if (r.in_sun) { ctx.beginPath(); ctx.arc(x(i), y(r.natural_mv), 3.2 * devicePixelRatio, 0, 7); ctx.fill(); } });
+  }
+  // 轴
+  ctx.strokeStyle = "#2C3A46"; ctx.lineWidth = 1;
+  ctx.beginPath(); ctx.moveTo(P, H - P); ctx.lineTo(W - 14, H - P); ctx.stroke();
+  ctx.fillStyle = "#5A6875"; ctx.font = (11 * devicePixelRatio) + "px sans-serif";
+  if (s.length) {
+    ctx.fillText(s[0].ts.slice(11, 16), P, H - P + 18 * devicePixelRatio);
+    ctx.fillText(s[s.length - 1].ts.slice(11, 16), W - 70 * devicePixelRatio, H - P + 18 * devicePixelRatio);
+  } else ctx.fillText("等待数据…", P, H - P - 10);
+  if (s.length) {  // 最新一帧的着陆点：seq 一到它就刷新，值不变也会亮
+    const v = s[s.length-1].raw != null ? s[s.length-1].raw
+            : (s[s.length-1].natural_mv + s[s.length-1].lamp_mv);
+    ctx.fillStyle = "#FFFFFF"; ctx.beginPath();
+    ctx.arc(x(s.length-1), y(v), (state.isNew ? 7 : 5) * devicePixelRatio, 0, 7); ctx.fill();
+  }
+}
+document.getElementById("winSel").onchange = tick;
+tick(); setInterval(tick, 2000);
+</script>
+</body>
+</html>

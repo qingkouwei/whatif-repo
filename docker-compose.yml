@@ -1,55 +1,36 @@
 version: "3.8"
 
-# 火山引擎（或任何一台 Docker 主机）单机全栈：
-# MQTT broker + 项目一 whatif-cloud + 项目二 solar-dashboard
-# 仓库结构假定：根目录下 whatif-lab/ 与 dashboard/ 并列
-# （本地 commission/移远 就是这个结构，git init 后整体推上去即可）
+# 单机全栈（任何一台装了 Docker 的主机都能跑）：
+# MQTT broker + 采光看板服务
+# 仓库结构：根目录下 solar-dashboard/ 为本服务源码
 
 services:
   mosquitto:
     image: eclipse-mosquitto:2
-    container_name: whatif-mosquitto
+    container_name: solar-mosquitto
     ports: ["1883:1883"]
     volumes:
       - ./mosquitto.conf:/mosquitto/config/mosquitto.conf
       - mosquitto-data:/mosquitto/data
     restart: unless-stopped
 
-  whatif-cloud:                       # 项目一「同桌」：行为判定/点评 API
-    build: ./whatif-cloud
-    container_name: whatif-cloud
-    ports: ["8000:8000"]
-    environment:
-      # LLM 三选一：填哪个走哪家。NVIDIA key 申请下来加一行 NVIDIA_API_KEY
-      # 并清掉本文件的 ARK_API_KEY 即切回 NIM，代码零改动。
-      LLM_PROVIDER: ${LLM_PROVIDER}
-      ARK_API_KEY: ${ARK_API_KEY}
-      DASHSCOPE_API_KEY: ${DASHSCOPE_API_KEY}
-      NVIDIA_API_KEY: ${NVIDIA_API_KEY}
-      LLM_MODEL: ${LLM_MODEL}          # 留空=启动时拉 /models 现场选
-      MQTT_HOST: mosquitto
-      CLOUD_DB: /app/data/whatif.db
-    volumes:
-      - cloud-data:/app/data
-    restart: unless-stopped
-
-  solar-dashboard:                    # 项目二「AI房评师」：采光看板+评估
+  solar-dashboard:                    # 采光看板 + 日账 + 房评报告 API
     build: ./solar-dashboard
     container_name: solar-dashboard
     ports: ["8001:8000"]
     environment:
+      # 大模型走 OpenAI 兼容接口，任意一家均可（见 solar-dashboard/.env.example）；
+      # 不配 key 也能跑——自动退回本地统计评估，看板如实标注来源
       LLM_PROVIDER: ${LLM_PROVIDER}
-      ARK_API_KEY: ${ARK_API_KEY}
-      DASHSCOPE_API_KEY: ${DASHSCOPE_API_KEY}
-      NVIDIA_API_KEY: ${NVIDIA_API_KEY}
+      LLM_API_KEY: ${LLM_API_KEY}
+      LLM_BASE_URL: ${LLM_BASE_URL}
       LLM_MODEL: ${LLM_MODEL}
       MQTT_HOST: mosquitto
       SOLAR_DB: /app/data/solar.db
     volumes:
-      - dashboard-data:/app/data       # 三天实测日账是资产，必须落卷
+      - dashboard-data:/app/data       # 日账与读数是资产，必须持久化
     restart: unless-stopped
 
 volumes:
   mosquitto-data:
-  cloud-data:
   dashboard-data:

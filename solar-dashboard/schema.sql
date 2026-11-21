@@ -47,7 +47,7 @@ CREATE TABLE IF NOT EXISTS devices (
     id            INTEGER PRIMARY KEY AUTOINCREMENT,
     device_id     TEXT    NOT NULL UNIQUE,      -- solar-ledger-01
     room_id       INTEGER,
-    model         TEXT,                        -- QuecDuino-EG800Z
+    model         TEXT,                        -- QuecDuino-EC800
     firmware      TEXT,
     status        TEXT    NOT NULL DEFAULT 'offline',  -- online / offline
     csq           INTEGER,                      -- 最近一次信号强度

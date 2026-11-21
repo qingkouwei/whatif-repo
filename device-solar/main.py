@@ -166,7 +166,12 @@ def main():
 
     while True:
         t = utime.localtime()
-        epoch = int(utime.mktime(t))
+        # 模组 localtime 未带时区（实测恒为 UTC，慢 8h）：
+        # 先按 UTC_OFFSET_H 校正出北京时间的 epoch 与结构体。
+        # 不校正的话白天判定(6-18点)会把北京白天当凌晨，
+        # 一切光都进"夜间灯事件"，natural 虚高、日照账本全错。
+        epoch = int(utime.mktime(t)) + int(getattr(config, "UTC_OFFSET_H", 0)) * 3600
+        t = utime.localtime(epoch)
         date_key = "%04d-%02d-%02d" % (t[0], t[1], t[2])
 
         if date_key != rolled_into:

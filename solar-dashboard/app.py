@@ -156,16 +156,20 @@ async def register_device(dev, payload):
             room_id = cur.lastrowid
     else:
         room_id = room["id"]
-        await _db.execute(
-            "UPDATE rooms SET device_id = ?, has_sensor = 1 WHERE id = ?",
-            (dev, room_id))
+        # 房间 device_id 被手动置空 = 维护者主动解绑（暂停入库/清脏数据）。
+        # 自注册只在新建房间时绑定；重绑需人工填回，防止板子重启把
+        # 隔离中的脏数据通道悄悄接回去。
+        if room["device_id"] is not None:
+            await _db.execute(
+                "UPDATE rooms SET device_id = ?, has_sensor = 1 WHERE id = ?",
+                (dev, room_id))
     await _db.execute(
         """INSERT INTO devices (device_id, room_id, model, firmware, status)
-           SELECT ?, ?, 'QuecDuino-EG800Z', ?, 'online' WHERE NOT EXISTS
+           SELECT ?, ?, 'QuecDuino-EC800', ?, 'online' WHERE NOT EXISTS
            (SELECT 1 FROM devices WHERE device_id = ?)""",
         (dev, room_id, payload.get("fw"), dev))
     await _db.execute(
-        "UPDATE devices SET firmware=?, model='QuecDuino-EG800Z' WHERE device_id=?",
+        "UPDATE devices SET firmware=?, model='QuecDuino-EC800' WHERE device_id=?",
         (payload.get("fw"), dev))
     await _db.commit()
 
@@ -204,6 +208,15 @@ async def save_reading(dev, payload):
     naive_min = payload.get("naive_sun_min", sun_min)
 
     ts = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+
+    # 设备时钟漂移只告警、不改变入库：ts 恒用服务器接收时刻，
+    # 曲线时间正确性与设备时钟彻底解耦。重烧固件(UTC_OFFSET_H=8)后
+    # 这行偏移应归零；持续 -8h ≈ 板子还在跑旧固件。
+    _dev_ts = payload.get("ts")
+    if isinstance(_dev_ts, (int, float)) and _dev_ts > 1700000000:
+        _skew = _dev_ts - time.time()
+        if abs(_skew) > 600:
+            print(f"[CLOCK] {dev} 设备时钟偏差 {_skew/3600:+.1f}h（不影响入库 ts）")
 
     await _db.execute(
         """INSERT INTO readings
@@ -399,6 +412,40 @@ async def devices_health():
     """设备健康度。看板用它提示"数据可能是旧的"。"""
     async with _db.execute("SELECT * FROM v_device_health") as cur:
         return [dict(r) for r in await cur.fetchall()]
+
+
+@app.get("/api/devices/{dev_id}/live")
+async def device_live(dev_id: str, minutes: int = Query(20, ge=1, le=1440)):
+    """按设备号的实时短窗序列（调试页用）。
+
+    与 room_curve 的区别：按 device 查（真机/mock 都行，不必先建房间视图），
+    且返回带分量与饱和度，供前端画滚动波形 + 握/照手势对比。
+    raw 一并返回：真机的 natural_mv 是滚动窗口聚合值（慢、抗抖），
+    raw 才是最新瞬时读数——演示"波形在动"要看 raw。
+    """
+    since = (datetime.now() - timedelta(minutes=minutes)).strftime("%Y-%m-%d %H:%M:%S")
+    async with _db.execute(
+        """SELECT r.ts, r.natural_mv, r.lamp_mv, r.temp_c, r.rh, r.in_sun, r.seq,
+                  r.raw, r.lux
+           FROM readings r JOIN rooms m ON m.id = r.room_id
+           WHERE m.device_id = ? AND r.ts >= ? ORDER BY r.id ASC""",
+        (dev_id, since)) as cur:
+        rows = [dict(r) for r in await cur.fetchall()]
+    async with _db.execute(
+        """SELECT d.status, d.csq, d.last_seen_at, d.firmware
+           FROM devices d WHERE d.device_id = ?""", (dev_id,)) as cur:
+        meta = await cur.fetchone()
+    if meta is None:
+        # 设备查不到时把在用的设备号吐回来——调试页 URL 里打错一个字符
+        # （solar-mock-0 少了个 1）页面只会说"等待数据"，最难自查
+        async with _db.execute(
+            """SELECT device_id, status, last_seen_at FROM devices
+               ORDER BY last_seen_at DESC LIMIT 8""") as cur:
+            known = [dict(r) for r in await cur.fetchall()]
+    else:
+        known = None
+    return {"dev": dev_id, "meta": dict(meta) if meta else None,
+            "known_devices": known, "series": rows}
 
 
 class CmdRequest(BaseModel):
